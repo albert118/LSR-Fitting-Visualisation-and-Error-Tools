@@ -19,3 +19,7 @@
 * Model Info, Data Trimming and Fitting Functions classes.
 * Text file output of the results is saved to the desktop (fitted formulas, means, modes, etc...)
 * Data visualisation via the <a href="https://lvcharts.net/">Live Charts library</a>.
+
+#### Note:
+Everyone starts somewhere? 
+<i>This was my first major programming project as part of a seniour year project.</i>
