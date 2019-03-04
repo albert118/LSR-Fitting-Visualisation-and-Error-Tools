@@ -2,292 +2,201 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
+using System.Diagnostics;
 
 namespace MachineLearnerWPF
-{  
-    /// <summary>
-    /// Set of functions for regression and output data
-    /// </summary>
-    public class FittingFunctions
+{
+    public class FittedFunction
     {
+        // private fields
+        private double[] x_vals, y_vals, predictor_vals, error_vals;
+        private double avg_x, avg_y, gradient, x_intercept;
+
         /// <summary>
-        /// For univariate regression
+        /// A Fitted Function Object,
+        /// Declare an instance of this object with list data,
+        /// This is converted to array structure and allows 
+        /// return function to be called in one line.
+        /// All operations are internal and make fitting an LSR function
+        /// simple & elegant!
         /// </summary>
-        /// <param name="X">Independent Variable</param>
-        /// <param name="Y">Dependent Variable</param>
-        /// <param name="n">Size of set</param>
-        /// <param name="AvgX"></param>
-        /// <param name="AvgY"></param>
-        /// <returns>b1 regressor</returns>
-        private static double GradSolver(List<int> X, List<int> Y, int n, double AvgX, double AvgY)
+        /// <param name="X_Vals">List of x values to be regressed on. </param>
+        /// <param name="Y_Vals">List of y values to be predicted against. </param>
+        public FittedFunction(List<double> X_Vals, List<double> Y_Vals, Item item, string function_name) // contstructor
         {
-            double Grad;
-            double SumNom = 0;
-            double SumDenom = 0;
-            double Denom;
-            for(var i = 0; i < n; i++)
+            using (StreamWriter(fn) as _errStream)
             {
-                SumNom += (X.ElementAt(i)-AvgX) * (Y.ElementAt(i)-AvgY);
-                Denom = (X.ElementAt(i) - AvgX);
+                // activate the logging on instance decleration
+                DateTime appStart = DateTime.Now;
+                string fn = @"C:\Users\alber\Documents" + appStart.ToString("yyyyMMddHHmm") + ".log";
+                // Redirect standard error stream to file
+                Console.SetError(_errStream);
+
+                // check list length, apply trimming method (with array conversion) if not, 
+                // else convert to arrays, otherwise log error data
+                X_list_len = x_vals.Count();
+                Y_list_len = y_vals.Count();
+
+                if (X_list_len != Y_list_len)
+                {
+
+                    int fnl_count = Trimmer(X_Vals, Y_Vals);
+                    //Write output of Trimmer method
+                    Console.Error.WriteLine("Trimming data set {0} from {1} values to {2} values...", "X Data List", X_list_len, fnl_count);
+                    Console.Error.WriteLine("Trimming data set {0} from {1} values to {2} values...", "Y Data List", Y_list_len, fnl_count);
+
+                    predictor_vals = new double[fnl_count];
+                    error_vals = new double[fnl_count];
+                }
+                else if (X_list_len == Y_list_len)
+                {
+                    X_DataVals.set = X_Vals.ToArray();
+                    Y_DataVals.set = Y_Vals.ToArray();
+                    // arbitrary choice on name for array def'
+                    predictor_vals = new double[X_list_len];
+                    error_vals = new double[X_list_len];
+                }
+                else
+                {
+                    // TODO: Logging methods seperated!!
+                    var stack_trace = new StackTrace();
+                    var stack_frame = stack_trace.GetFrame(0);
+                    var method_err = ("Current Method: {0} \n", stack_frame.GetMethod());
+                    Console.Error.WriteLine(method_err);
+                    Console.Error.WriteLine("Stack Frame: {0}\n", stack_frame);
+                    throw new ArgumentException(method_err);
+                }
+
+                // get avg's then find gradient & x intercept
+                avg_x = x_vals.Average();
+                avg_y = y_vals.Average();
+                gradient = GradSolver(x_vals, y_vals, avg_x, avg_y);
+                x_intercept = InterceptCalc(gradient, avg_x, avg_y);
+                for (int i = 0; i < y_vals.Count(); i++) { error_vals[i] = y_vals[i] - predictor_vals[i]; } // find the errors
+                Predictor(x_vals, gradient, x_intercept); // find the predictions
+
+                // now finalise all the data in the items dictionaries
+                item.SetFittedData("x intercept", function_name, x_intercept);
+                item.SetFittedData("Grad", function_name, gradient);
+            }
+        }
+
+        // private methods
+        private Func<Grad, avg_x, avg_y> InterceptCalc = x_int => { return avg_y - Grad * avg_x; }; // much simpler as a Lambda expr.
+        private double GradSolver(double[] x_vals, double[] y_vals, double avg_x, double avg_y)
+        {
+            double Denom;
+            double SumNom = 0, SumDenom = 0;
+            int x_val_len = x_vals.Length();
+            int y_val_len = y_vals.Length();
+
+            for (int i = 0; i < n; i++)
+            {
+                var x = x_vals[i]; // single lookup rather than two, prob' infentesimal difference but cleaner
+                SumNom += (x - AvgX) * (y_vals[i] - AvgY);
+                Denom = (x - AvgX);
                 SumDenom += Math.Pow(Denom, 2);
             }
-            Grad = SumNom / SumDenom;
+            Grad = SumNom / SumDenom; // this could be done in a single line, but more readable this way
             return Grad;
         }
-        private static double StrdGradSolver(List<double> X, List<double> Y, int n, double AvgX, double AvgY)
+        private int Trimmer(List<double> x_vals, List<double> y_vals)
         {
-            double Grad;
-            double SumNom = 0;
-            double SumDenom = 0;
-            double Denom;
-            for (var i = 0; i < n; i++)
+
+            int X_MAX = x_vals.Count();
+            int Y_MAX = y_vals.Count();
+
+            if (X_MAX > Y_MAX)
             {
-                SumNom += (X.ElementAt(i) - AvgX) * (Y.ElementAt(i) - AvgY);
-                Denom = (X.ElementAt(i) - AvgX);
-                SumDenom += Math.Pow(Denom, 2);
+                int diff = X_MAX - Y_MAX;
+                x_vals.RemoveRange(y_vals(Y_MAX - 1), diff);
+                // now convert here to array
+                X_DataVals.set = x_vals.ToArray();
+                Y_DataVals.set = y_vals.ToArray();
+                return Y_MAX;
             }
-            Grad = SumNom / SumDenom;
-            return Grad;
-        }
-        /// <summary>
-        /// Solve for y intercept of LSR minimised function
-        /// </summary>
-        /// <param name="Grad">Function Gradient</param>
-        /// <param name="Ymean">Series y mean value</param>
-        /// <param name="Xmean">Series x mean value</param>
-        /// <returns>double Intercept value</returns>
-        private static double IntSolver(double Grad, double Ymean, double Xmean)
-        {
-            double Int;
-            return Int = Ymean - Grad * Xmean;       
-        }
-        /// <summary>
-        /// Error function of LSR
-        /// </summary>
-        /// <returns>R-squared error value</returns>
-        private static double ErrorSolver(List<int> Quant, List<double> Prediction)
-        {
-            double Err = 0;
-            for (int i = 0; i< Quant.Count(); i++)
+            else if (X_MAX < Y_MAX)
             {
-                var PredErr = Quant.ElementAt(i) - Prediction.ElementAt(i);
-                Err += Math.Pow(PredErr, 2);
+                int diff = Y_MAX - X_MAX;
+                y_vals.RemoveRange(x_vals(X_MAX - 1), diff);
+                // now convert here to array
+                X_DataVals.set = x_vals.ToArray();
+                Y_DataVals.set = y_vals.ToArray();
+                return X_MAX;
             }
-            return Math.Round(Err);
-        }
-        private static double StrdErrorSolver(List<double> Quant, List<double> Prediction)
-        {
-            double Err = 0;
-            List<double> deStrd = DataPreparer.DeStrd(Prediction);
-            for (int i = 0; i < Quant.Count(); i++)
-            {     
-                var PredErr = Quant.ElementAt(i) - deStrd.ElementAt(i);
-                Err += Math.Pow(PredErr, 2);
-            }
-            return Err;
-        }
-        /// <summary>
-        /// solves fitted equation for estimated data
-        /// </summary>
-        /// <param name="Price"></param>
-        /// <param name="Grad"></param>
-        /// <param name="Int"></param>
-        /// <returns></returns>
-        public static List<double> Predictor (List<int> Price, double Grad, double Int)
-        {
-            var Pred = new List<double>();
-            for (int i = 0; i<Price.Count(); i++)
+            else
             {
-                double pred = Int + Grad * Price.ElementAt(i);
-                Pred.Add(pred);
+                throw new Exception("Unknown comparison between data list lengths.");
             }
-            return Pred;
+
         }
-        private static List<double> StrdPredictor(List<double> Price, double Grad, double Int)
+        private void Predictor(double[] x_vals, double Grad, double x_intercept) // edits the list defined in private fields
         {
-            var Pred = new List<double>();
             for (int i = 0; i < Price.Count(); i++)
             {
                 double pred = Int + Grad * Price.ElementAt(i);
-                Pred.Add(pred);
+                predictor_vals.Add(pred);
             }
-            return Pred;
+            return;
         }
-        /// <summary>
-        /// Fits a line in a univariate analysis to data
-        /// </summary>
-        /// <param name="data">Input</param>
-        /// <param name="n">Range of Input</param>
-        /// <returns>Fit Param's, first column is gradients</returns>
-        public static double[,] FitLin(Constants.RawData data, int n)
-        {
-            //S(p)=BuyQuantity = b + m*SellPrice
-            //D(p)=SellQuantity = b - m*BuyPrice
-            double[,] Params = new double[3, 2];
-            var BQuant = data.BuyQuantity;
-            var BPrice = data.BuyPrice;
-            var SQuant = data.SellQuantity;
-            var SPrice = data.SellPrice;
 
-            //array location 0, 0 is mean value
-            var InfoObject = DataPreparer.DataInfo();          
-            var BPMean = (double)InfoObject.BuyPriceInfo[0, 0];
-            var BQMean = (double)InfoObject.BuyQuantInfo[0, 0];
-            var SPMean = (double)InfoObject.SellPriceInfo[0, 0];
-            var SQMean = (double)InfoObject.SellQuantInfo[0, 0];
-
-            //return B1/Grad for demand and supply
-            var GradDem = GradSolver(BPrice, SQuant, n, BPMean, SQMean);
-            var GradSup = GradSolver(SPrice, BQuant, n, SPMean, BQMean);
-            //return B0/intercept for demand and supply
-            var DemInt = IntSolver(GradDem, SQMean, BPMean);
-            var SupInt = IntSolver(GradSup, BQMean, SPMean);
-            //create predictions of data and add to predictions lists
-            var PredDem = Predictor(BPrice, GradDem, DemInt);
-            var PredSup = Predictor(SPrice, GradSup, SupInt);
-            //return error on predicitons
-            var DemErr = ErrorSolver(SQuant, PredDem);
-            var SupErr = ErrorSolver(BQuant, PredSup);
-            //add to Params and return
-            Params[0, 0] = Math.Round(GradDem);
-            Params[0, 1] = Math.Round(GradSup);
-            Params[1, 0] = Math.Round(DemInt);
-            Params[1, 1] = Math.Round(SupInt);
-            Params[2, 0] = Math.Round(DemErr);
-            Params[2, 1] = Math.Round(SupErr);
-            Console.WriteLine(Params[2,1]);
-            return Params;
-        }
-        /// <summary>
-        /// Fit to a standardised data set then return de-standardized values
-        /// </summary>
-        /// <param name="strdData"></param>
-        /// <param name="n">Dataset length</param>
-        /// <returns></returns>
-        public static double[,] StrdFitLin(Constants.StrdData strdData, int n)
-        {
-            //S(p)=SellQuantity = b + m*BuyPrice
-            //D(p)=BuyQuantity = b + m*SellPrice
-            double[,] Params = new double[3, 2];
-            var BQuant = strdData._strdBuyQuant;
-            var BPrice = strdData._strdBuyPrice;
-            var SQuant = strdData._strdSellQuant;
-            var SPrice = strdData._strdSellPrice;
-
-            var InfoObject = DataPreparer.StrdDataInfo(strdData);
-            //array location 0, 0 is mean value
-            var BPMean = (double)InfoObject.BuyPriceInfo[0, 0];
-            var BQMean = (double)InfoObject.BuyQuantInfo[0, 0];
-            var SPMean = (double)InfoObject.SellPriceInfo[0, 0];
-            var SQMean = (double)InfoObject.SellQuantInfo[0, 0];
-
-            //return B1/Grad for demand and supply
-            var GradDem = StrdGradSolver(SPrice, BQuant, n, SPMean, BQMean);
-            var GradSup = StrdGradSolver(BPrice, SQuant, n, BPMean, SQMean);
-            //return B0/intercept for demand and supply
-            var DemInt = IntSolver(GradDem, BQMean, SPMean);
-            var SupInt = IntSolver(GradSup, SQMean, BPMean);
-            //create predictions of data and add to predictions lists
-            var PredDem = StrdPredictor(SPrice, GradSup, SupInt);
-            var PredSup = StrdPredictor(BPrice, GradDem, DemInt);
-            //return error on predicitons
-            var DemErr = StrdErrorSolver(BQuant, PredDem);
-            var SupErr = StrdErrorSolver(SQuant, PredSup);
-            //add to Params and return
-            Params[0, 0] = GradDem;
-            Params[0, 1] = GradSup;
-            Params[1, 0] = DemInt;
-            Params[1, 1] = SupInt;
-            Params[2, 0] = DemErr;
-            Params[2, 1] = SupErr;
-            return Params;
-        }
+        // public methods, get's & set's
+        public double[] X_DataVals { get => x_vals; set => x_vals = value; }
+        public double[] Y_DataVals { get => y_vals; set => y_vals = value; }
+        public double[] Predicted_Values { get => predicor_vals; }
+        public double[] Prediction_Errors { get => error_vals;  }
     }
-    /// <summary>
-    /// Fitted model information
-    /// </summary>
+
     public class ModelInfo
     {
-        /// <summary>
-        /// Calculates the Correlation Coefficient (pearson's)
-        /// </summary>
-        /// <param name="x">independent variable</param>
-        /// <param name="x_avg">mean</param>
-        /// <param name="y">dependent variable</param>
-        /// <param name="y_avg">mean</param>
-        /// <returns>Correlation Coefficient</returns>
-        public static double[] CorrCoeff (Constants.RawData data, Constants.DataInfo info)
+        public double Correlation_Coefficient(double[] x_vals, double[] y_vals, double x_avg, double y_avg)
         {
-            List<int> demquant = data.SellQuantity;
-            List<int> supquant = data.BuyQuantity;
-            List<int> demprice = data.BuyPrice;
-            List<int> supprice = data.SellPrice;
-            double demprice_avg = (double)info.BuyPriceInfo[ 0, 0 ];
-            double supprice_avg = (double)info.SellPriceInfo[ 0, 0 ];
-            double demquant_avg = (double)info.SellQuantInfo[ 0, 0 ];
-            double supquant_avg = (double)info.BuyQuantInfo[ 0, 0 ];
-            double[] Corrs = new double[2];
-            double nominator = 0;
-            double denominator = 0;
-            double Denomxx = 0;
-            double Denomyy = 0;
+            int count = x_vals.Length();
+            if (count == y_vals.Length())
+            {
+                var sum_x = x_vals.Sum();
+                var sum_y = y_vals.Sum();
+                double Correlation = 0.0;
+                double denominator, denom_LHS, denom_RHS = 0.0;
+                double nominator, nom_LHS, nom_RHS = 0.0;
 
-            for (int i = 0; i < demquant.Count(); i++)
-            {
-                nominator += (demprice.ElementAt(i) - demprice_avg) * (demquant.ElementAt(i) - demquant_avg);
-                Denomxx += Math.Pow(demprice.ElementAt(i) - demprice_avg, 2); 
-                Denomyy += Math.Pow(demquant.ElementAt(i) - demquant_avg, 2);
+                nom_RHS = sum_x * sum_y;
+
+                for (int i = 0; i < count; i++)
+                {
+                    nom_LHS += x_vals[i] * y_vals[i];
+                    denom_LHS += Math.Pow(x_vals[i], 2);
+                    denom_RHS += Math.Pow(y_vals[i], 2);
+                }
+                denom_LHS = count * denom_LHS - sum_x;
+                denom_RHS = count * denom_RHS - sum_y;
+                denominator = Math.Sqrt(denom_LHS * denom_RHS);
+                nominator = nom_LHS - nom_RHS;
+
+                Correlation = nominator / denominator;
+                return Correlation;
             }
-            denominator = Math.Sqrt(Denomxx * Denomyy);
-            Corrs[0] = nominator / denominator;
-            for (int i = 0; i < demquant.Count(); i++)
+            else
             {
-                nominator += (supprice.ElementAt(i) - supprice_avg) * (supquant.ElementAt(i) - supquant_avg);
-                Denomxx += Math.Pow(supprice.ElementAt(i) - supprice_avg, 2);
-                Denomyy += Math.Pow(supquant.ElementAt(i) - supquant_avg, 2);
+                throw new ArgumentException("Array data must be equal length, trim the data first!");
             }
-            denominator = Math.Sqrt(Denomxx * Denomyy);
-            Corrs[1] = nominator / denominator;
-            return Corrs;
-        }
-        /// <summary>
-        /// Get the standard deviation of a fitted model
-        /// </summary>
-        /// <param name="Err">Error of model, a squared value</param>
-        /// <param name="N">number of x, y pairs</param>
-        /// <returns>sigma, standard deviation</returns>
-        public static double StrdDev (List<int> Quant, Object[,] SetInfo, int N)
+            
+        }    
+        public double Standard_Deviation (double[] x_vals, double x_avg, int N)
         {
-            double Err = 0;
-            foreach(double n in Quant)
+            
+            double mean_err, strd_dev = 0.0;
+            foreach (double x in x_vals)
             {
-                Err += Math.Pow((n - (double)SetInfo[0, 0]), 2);
+                mean_err += Math.Pow((x- x_avg), 2);
             }
-            var StrdDev = Math.Sqrt((Err / N));
-            return Math.Round(StrdDev);
-        }
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="Err">Squared Error prediction of linear fitted formula</param>
-        /// <param name="N">Size of fitted equations datset (no. (x,y) pairs)</param>
-        /// <returns>The Root Mean Squared Error of a fitted formula</returns>
-        public static double RMSE(double Err, int N) => (Math.Round(Math.Sqrt(Err / N)));
+            strd_dev = Math.Sqrt((mean_err / N));
+            return strd_dev;
+        }    
+        public double RMSE(double Err, int N) => (Math.Round(Math.Sqrt(Err / N)));
     }
-    /// <summary>
-    /// Data Writing Tools
-    /// </summary>
     public class DataWriter
     {
-        /// <summary>
-        /// Create a Human Readable File on the desktop. Including analysis of instances and fitted functions.
-        /// </summary>
-        /// <param name="info">RawData info object</param>
-        /// <param name="n">item ID</param>
-        /// <param name="RawFit">Fitted Parameters for rawdata</param>
-        /// <param name="StrdFit">Fitted Parameters for Standardised Data</param>
-        /// <param name="WeightedFit">Fitted Parameters for EWMA data</param>
-        /// <param name="WeightedFit">Fitted Parameters for standardised EWMA data</param>
         public static void FileMaker(Constants.DataInfo info, int n, double[,] RawFit, double[,] StrdFit, double[] ModelInfo)
         {
             if (info == null)
@@ -368,78 +277,8 @@ namespace MachineLearnerWPF
             }
         }
     }
-    /// <summary>
-    /// Data tools
-    /// </summary>
     class DataPreparer
     {
-        /// <summary>
-        /// de-standardize data
-        /// </summary>
-        /// <param name="ListStrd"></param>
-        /// <returns></returns>
-        public static List<double> DeStrd (List<double> ListStrd)
-        {
-            var Mean = ListStrd.Average();
-            var Count = ListStrd.Count();
-            double Sum = 0;
-            List<double> DeStrd = new List<double>();
-            //standard deviation
-            for (int i = 0; i < Count; i++)
-            {
-                double Working = (ListStrd.ElementAt(i) - Mean);
-                Sum += Math.Pow(Working, 2);
-            }
-            double StrdDev = Math.Sqrt(Sum / Count);
-            //z-score solve for x
-            double x;
-            foreach (int i in ListStrd)
-            {
-                x = i*StrdDev + Mean;
-                DeStrd.Add(x);
-            }
-            return DeStrd;
-        }
-
-        /// <summary>
-        /// Standardise a single list of data
-        /// </summary>
-        /// <param name="Input"></param>
-        /// <returns>Standardised data</returns>
-        public static List<double> ListStrd(List<double> Input)
-        {
-            //z = (x- avg) / dev 
-            var Mean = Input.Average();
-            var Count = Input.Count();
-            double Prev = 0;
-            double Sum = 0;
-            double Strd = 0;
-            List<double> ListStrd = new List<double>();
-
-            for (int i = 0; i < Count; i++)
-            {
-                double Current = Input.ElementAt(i);
-                double Working = (Current - Mean);
-                double Ans = Math.Pow(Working, 2);
-                Sum = Prev + Ans;
-                Prev = Ans;
-            }
-            //gets the standard deviation
-            double StrdDev = Math.Sqrt(Sum / Count);
-            
-            foreach (int i in Input)
-            {
-                Strd = (i - Mean) / StrdDev;
-                ListStrd.Add(Strd);
-            }
-            return ListStrd;
-        }
-
-        /// <summary>
-        /// Raw Data Z-Score standardiser
-        /// </summary>
-        /// <param name="rawData">Raw data from item</param>
-        /// <returns>Population standardised score of each data</returns>
         public static Constants.StrdData Z_Score(Constants.RawData rawData)
         {
             var strdbquant = new List<double>();
@@ -488,18 +327,13 @@ namespace MachineLearnerWPF
             return z_score;
         }
 
-        /// <summary>
-        ///  Raw data file reader of item
-        /// </summary>
-        /// <param name="a">Takes input of which item from Constants.Id[]</param>
-        /// <returns>returns list of each of the four parameters</returns>
         public static Constants.RawData Splicer(int a)
         {
             var sprice = new List<int>();
             var squant = new List<int>();
             var bprice = new List<int>();
             var bquant = new List<int>();
-            Constants.RawData rawdata = new Constants.RawData(sprice, squant, bprice, bquant);     
+            Constants.RawData rawdata = new Constants.RawData(sprice, squant, bprice, bquant);
 
             int id = Constants.id[a];
             string file = @"C:\Users\iTzEinstein118Xx\Documents\ItemDataOutput\" + id + ".txt";
@@ -531,249 +365,10 @@ namespace MachineLearnerWPF
                                 Console.WriteLine("Bad Format");
                             }
                         }
-                    }                              
+                    }
                 }
                 return rawdata;
             }
-        }
-
-        /// <summary>
-        /// Item data, Mean, Min, Max, Median and Set Length
-        /// </summary>
-        /// <param name="rawdata">Input data object, with four lists</param>
-        /// <returns>DataInfo object, Mean, Min, Max, Median and Set Length</returns>
-        public static Constants.DataInfo DataInfo()
-        {
-            Constants.RawData rawdata = Constants.Item.GetRawData();
-            Object[,] spriceinfo = new Object[,] { { 0, "Mean" }, { 0, "Min" }, { 0, "Max" }, { 0, "Median" }, { 0, "Set Length" } };
-            Object[,] squantinfo = new Object[,] { { 0, "Mean" }, { 0, "Min" }, { 0, "Max" }, { 0, "Median" }, { 0, "Set Length" } };
-            Object[,] bpriceinfo = new Object[,] { { 0, "Mean" }, { 0, "Min" }, { 0, "Max" }, { 0, "Median" }, { 0, "Set Length" } };
-            Object[,] bquantinfo = new Object[,] { { 0, "Mean" }, { 0, "Min" }, { 0, "Max" }, { 0, "Median" }, { 0, "Set Length" } };
-            List<int> sprice = new List<int>();
-            List<int> squant = new List<int>();
-            List<int> bprice = new List<int>();
-            List<int> bquant = new List<int>();
-
-            Constants.DataInfo datainfo = new Constants.DataInfo(spriceinfo, squantinfo, bpriceinfo, bquantinfo);
-
-            bpriceinfo[0,0] = rawdata.BuyPrice.Average();
-            bpriceinfo[1,0] = rawdata.BuyPrice.Min();
-            bpriceinfo[2,0] = rawdata.BuyPrice.Max();
-            bpriceinfo[4,0] = rawdata.BuyPrice.Count();
-            bprice.AddRange(rawdata.BuyPrice);
-            bprice.Sort();
-            int i = (bprice.Count() + 1) / 2;
-            bpriceinfo[3,0] = bprice.ElementAt(i);
-
-            spriceinfo[0,0] = rawdata.SellPrice.Average();
-            spriceinfo[1,0] = rawdata.SellPrice.Min();
-            spriceinfo[2,0] = rawdata.SellPrice.Max();
-            spriceinfo[4,0] = rawdata.SellPrice.Count();
-            sprice.AddRange(rawdata.SellPrice);
-            sprice.Sort();
-            int j = (sprice.Count() + 1) / 2;
-            spriceinfo[3, 0] = sprice.ElementAt(j);
-
-            bquantinfo[0,0] = rawdata.BuyQuantity.Average();
-            bquantinfo[1,0] = rawdata.BuyQuantity.Min();
-            bquantinfo[2,0] = rawdata.BuyQuantity.Max();
-            bquantinfo[4,0] = rawdata.BuyQuantity.Count();
-            bquant.AddRange(rawdata.BuyQuantity);
-            bquant.Sort();
-            int k = (bquant.Count() + 1) / 2;
-            bquantinfo[3, 0] = bquant.ElementAt(k);
-
-            squantinfo[0,0] = rawdata.SellQuantity.Average();
-            squantinfo[1,0] = rawdata.SellQuantity.Min();
-            squantinfo[2,0] = rawdata.SellQuantity.Max();
-            squantinfo[4,0] = rawdata.SellQuantity.Count();
-            squant.AddRange(rawdata.SellQuantity);
-            squant.Sort();
-            int l = (squant.Count() + 1) / 2;
-            squantinfo[3,0] = squant.ElementAt(l);
-            datainfo.BuyPriceInfo = bpriceinfo;
-            datainfo.BuyQuantInfo = bquantinfo;
-            datainfo.SellQuantInfo = squantinfo;
-            datainfo.SellPriceInfo = spriceinfo;
-
-            return datainfo;
-        }
-
-        /// <summary>
-        /// Item data, Mean, Min, Max, Median and Set Length
-        /// </summary>
-        /// <param name="rawdata">Input standard data object</param>
-        /// <returns>DataInfo object, Mean, Min, Max, Median and Set Length</returns>
-        public static Constants.DataInfo StrdDataInfo(Constants.StrdData strdData)
-        {
-            Object[,] spriceinfo = new Object[,] { { 0, "Mean" }, { 0, "Min" }, { 0, "Max" }, { 0, "Median" }, { 0, "Set Length" } };
-            Object[,] squantinfo = new Object[,] { { 0, "Mean" }, { 0, "Min" }, { 0, "Max" }, { 0, "Median" }, { 0, "Set Length" } };
-            Object[,] bpriceinfo = new Object[,] { { 0, "Mean" }, { 0, "Min" }, { 0, "Max" }, { 0, "Median" }, { 0, "Set Length" } };
-            Object[,] bquantinfo = new Object[,] { { 0, "Mean" }, { 0, "Min" }, { 0, "Max" }, { 0, "Median" }, { 0, "Set Length" } };
-            List<double> sprice = new List<double>();
-            List<double> squant = new List<double>();
-            List<double> bprice = new List<double>();
-            List<double> bquant = new List<double>();
-
-            Constants.DataInfo datainfo = new Constants.DataInfo(spriceinfo, squantinfo, bpriceinfo, bquantinfo);
-
-            bpriceinfo[0, 0] = strdData._strdBuyPrice.Average();
-            bpriceinfo[1, 0] = strdData._strdBuyPrice.Min();
-            bpriceinfo[2, 0] = strdData._strdBuyPrice.Max();
-            bpriceinfo[4, 0] = strdData._strdBuyPrice.Count();
-            bprice.AddRange(strdData._strdBuyPrice);
-            bprice.Sort();
-            int i = (bprice.Count() + 1) / 2;
-            bpriceinfo[3, 0] = bprice.ElementAt(i);
-
-            spriceinfo[0, 0] = strdData._strdSellPrice.Average();
-            spriceinfo[1, 0] = strdData._strdSellPrice.Min();
-            spriceinfo[2, 0] = strdData._strdSellPrice.Max();
-            spriceinfo[4, 0] = strdData._strdSellPrice.Count();
-            sprice.AddRange(strdData._strdSellPrice);
-            sprice.Sort();
-            int j = (sprice.Count() + 1) / 2;
-            spriceinfo[3, 0] = sprice.ElementAt(j);
-
-            bquantinfo[0, 0] = strdData._strdBuyQuant.Average();
-            bquantinfo[1, 0] = strdData._strdBuyQuant.Min();
-            bquantinfo[2, 0] = strdData._strdBuyQuant.Max();
-            bquantinfo[4, 0] = strdData._strdBuyQuant.Count();
-            bquant.AddRange(strdData._strdBuyQuant);
-            bquant.Sort();
-            int k = (bquant.Count() + 1) / 2;
-            bquantinfo[3, 0] = bquant.ElementAt(k);
-
-            squantinfo[0, 0] = strdData._strdSellQuant.Average();
-            squantinfo[1, 0] = strdData._strdSellQuant.Min();
-            squantinfo[2, 0] = strdData._strdSellQuant.Max();
-            squantinfo[4, 0] = strdData._strdSellQuant.Count();
-            squant.AddRange(strdData._strdSellQuant);
-            squant.Sort();
-            int l = (squant.Count() + 1) / 2;
-            squantinfo[3, 0] = squant.ElementAt(l);
-            datainfo.BuyPriceInfo = bpriceinfo;
-            datainfo.BuyQuantInfo = bquantinfo;
-            datainfo.SellQuantInfo = squantinfo;
-            datainfo.SellPriceInfo = spriceinfo;
-
-            return datainfo;
-        }
-
-        /// <summary>
-        ///Weight standardised data
-        /// </summary>
-        /// <param name="strdData">Standard Data object</param>
-        /// <param name="Alpha">Higher alpha discards data faster</param>
-        /// <returns>Weighted, Standardised data</returns>
-        public static Constants.StrdData EWMA(Constants.StrdData strdData, double Alpha)
-        {
-            var strdbquant = new List<double>();
-            var strdbprice = new List<double>();
-            var strdsprice = new List<double>();
-            var strdsquant = new List<double>();
-            List<double>[] AccessList = new List<double>[] { strdbprice, strdbquant, strdsprice, strdsquant};
-            List<double>[] DataLists = new List<double>[] { strdData._strdBuyPrice, strdData._strdBuyQuant, strdData._strdSellPrice, strdData._strdSellQuant };
-            Constants.StrdData ewma = new Constants.StrdData(strdbprice, strdbquant,strdsprice,strdsquant);
-
-            for (int j = 0; j < AccessList.Count(); j++)
-            {
-                double[] WeightedList = new double[DataLists.ElementAt(j).Count()];
-                List<double> CurrentList = DataLists.ElementAt(j);
-
-                double X_init = CurrentList.ElementAt(0);
-                //first X value is not weighted, used to initiallise weighting
-                WeightedList[0] = X_init;
-                double Weight_prev = X_init;
-                double Weight_Current = 0;
-
-                for (int i = 0; i < CurrentList.Count(); i++)
-                {
-                    Weight_Current = Alpha * CurrentList.ElementAt(i) + (1 - Alpha) * Weight_prev;
-                    WeightedList[i] = Weight_Current;
-                    Weight_prev = Weight_Current;
-                }
-
-                AccessList[j].AddRange(WeightedList);
-
-            }
-
-            ewma._strdBuyPrice = strdbprice;
-            ewma._strdBuyQuant = strdbquant;
-            ewma._strdSellPrice = strdsprice;
-            ewma._strdSellQuant = strdsquant;
-
-            return ewma;
-        }
-
-        /// <summary>
-        /// weighting function for non-standardised data (raw data)
-        /// </summary>
-        /// <param name="rawdata">Raw data object</param>
-        /// <param name="Alpha">higher alpha discards quicker</param>
-        /// <returns>Pure weighted data</returns>
-        public static Constants.StrdData Weighter(Constants.RawData rawdata, double Alpha)
-        {
-            var strdbquant = new List<double>();
-            var strdbprice = new List<double>();
-            var strdsprice = new List<double>();
-            var strdsquant = new List<double>();
-
-            List<double> BuyQ = rawdata.BuyQuantity.Select<int, double>(i => i).ToList();
-            List<double> BuyP = rawdata.BuyPrice.Select<int, double>(i => i).ToList();
-            List<double> SellQ = rawdata.SellQuantity.Select<int, double>(i => i).ToList();
-            List<double> SellP = rawdata.SellPrice.Select<int, double>(i => i).ToList();
-
-            List<double>[] AccessList = new List<double>[] { strdbprice, strdbquant, strdsprice, strdsquant };
-            List<double>[] DataLists = new List<double>[] { BuyP, BuyQ, SellP, SellQ };
-            Constants.StrdData ewma = new Constants.StrdData(strdbprice, strdbquant, strdsprice, strdsquant);
-
-            for (int j = 0; j < DataLists.Count(); j++)
-            {
-                double[] WeightedArray = new double[DataLists.ElementAt(j).Count()];
-                List<double> CurrentList = DataLists.ElementAt(j);
-
-                double X_init = CurrentList.ElementAt(0);
-                //first X value is not weighted, used to initiallise weighting
-                WeightedArray[0] = X_init;
-                double Weight_prev = X_init;
-                double Weight_Current = 0;
-
-                for (int i = 0; i < CurrentList.Count(); i++)
-                {
-                    Weight_Current = Alpha * CurrentList.ElementAt(i) + (1 - Alpha) * Weight_prev;
-                    WeightedArray[i] = Weight_Current;
-                    Weight_prev = Weight_Current;
-                }
-
-                AccessList[j].AddRange(WeightedArray);
-            }
-
-            ewma._strdBuyPrice = strdbprice;
-            ewma._strdBuyQuant = strdbquant;
-            ewma._strdSellPrice = strdsprice;
-            ewma._strdSellQuant = strdsquant;
-
-            return ewma;
-        }
-
-        /// <summary>
-        /// Trims the raw data object length to desired length, leaves original length - n
-        /// </summary>
-        /// <param name="rawData"></param>
-        /// <param name="ListLength">Datapoints to remove</param>
-        /// <returns></returns>
-        public static void Trimmer (Constants.RawData rawData, int ListLength)
-        {
-            
-            int BQcount = rawData.BuyQuantity.Count - ListLength;
-            rawData.BuyQuantity.RemoveRange(ListLength, BQcount);
-            int BPcount = rawData.BuyPrice.Count - ListLength;
-            rawData.BuyPrice.RemoveRange(ListLength, BPcount);
-            int SQcount = rawData.SellQuantity.Count - ListLength;
-            rawData.SellQuantity.RemoveRange(ListLength, SQcount);
-            int SPcount = rawData.SellPrice.Count - ListLength;
-            rawData.SellPrice.RemoveRange(ListLength, SPcount);
         }
     }
 }
